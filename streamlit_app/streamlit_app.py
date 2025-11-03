@@ -1,66 +1,55 @@
 import streamlit as st
-import pandas as pd
 import requests
+import pandas as pd
 import matplotlib.pyplot as plt
 
-# URL de tu API en Cloud Run
 API_URL = "https://flask-api-267825576411.us-central1.run.app/analyze"
 
-st.title("📊 App de Imputación de Datos")
+st.title("📊 Herramienta de imputación de datos")
 
-# Cargar archivo CSV
-uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
-if uploaded_file is not None:
+uploaded_file = st.file_uploader("Sube tu archivo CSV", type="csv")
+
+if uploaded_file:
     try:
-        df = pd.read_csv(uploaded_file)
+        uploaded_file.seek(0)
+        df_preview = pd.read_csv(uploaded_file)
         st.subheader("Vista previa del CSV")
-        st.dataframe(df)
+        st.dataframe(df_preview)
 
-        # Enviar CSV a la API
-        response = requests.post(API_URL, files={"file": uploaded_file})
+        # Enviar archivo a la API
+        uploaded_file.seek(0)
+        response = requests.post(
+            API_URL,
+            files={"file": (uploaded_file.name, uploaded_file.getvalue(), "text/csv")}
+            )
 
-        if response.status_code == 200:
+
+        if response.status_code != 200:
+            st.error(f"Error en la API: {response.status_code} - {response.text}")
+        else:
             data = response.json()
 
-            # Estadísticas antes de imputación
-            st.subheader("📌 Estadísticas antes de imputación")
-            stats_before = data.get("stats_before", {})
-            for col, stats in stats_before.items():
-                st.write(f"Columna: {col}")
-                df_stats = pd.DataFrame(stats, index=[0]).T
-                st.table(df_stats)
+            st.subheader("Estadísticas antes de imputación")
+            stats_before = pd.DataFrame(data["stats_before"]).T
+            st.dataframe(stats_before)
 
-            # Estadísticas después de imputación
-            st.subheader("📌 Estadísticas después de imputación")
-            stats_after = data.get("statistics_after", {})
-            for method, stats in stats_after.items():
-                st.write(f"### Técnica: {method}")
+            st.subheader("Estadísticas después de imputación")
+            for method, stats in data["statistics_after"].items():
+                st.write(f"Técnica: {method}")
                 df_stats = pd.DataFrame(stats).T
                 st.dataframe(df_stats)
 
-            # Datos imputados
-            st.subheader("📌 Datos imputados por técnica")
-            imputed_data = data.get("imputed_data", {})
-            for method, df_dict in imputed_data.items():
-                st.write(f"### Técnica: {method}")
-                df_imputed = pd.DataFrame(df_dict)
+            st.subheader("Datos imputados por técnica")
+            for method, imputed in data["imputed_data"].items():
+                st.write(f"Técnica: {method}")
+                df_imputed = pd.DataFrame(imputed)
                 st.dataframe(df_imputed)
 
-                # Gráfica de cada técnica
-                fig, ax = plt.subplots()
-                for col in df_imputed.columns:
-                    ax.plot(df_imputed.index, df_imputed[col], marker='o', label=col)
-                ax.set_title(f"Curvas de imputación: {method}")
-                ax.set_xlabel("Fila")
-                ax.set_ylabel("Valor")
-                ax.legend()
-                plt.tight_layout()
-                st.pyplot(fig)
-
-        else:
-            st.error(f"Error en la API: {response.status_code} - {response.text}")
+            st.subheader("Gráficas comparativas")
+            for method, imputed in data["imputed_data"].items():
+                df_plot = pd.DataFrame(imputed)
+                st.write(f"Técnica: {method}")
+                st.line_chart(df_plot)
 
     except Exception as e:
         st.error(f"Ocurrió un error procesando el archivo: {e}")
-
-
