@@ -1,52 +1,80 @@
 from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
-import os  # Para puerto dinámico en Cloud Run
+import os
 
 app = Flask(__name__)
 
+# Resto del código de tu API aquí...
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))  # Cloud Run asigna PORT=8080
+    app.run(host="0.0.0.0", port=port)
+
+# Función para imputar datos
+def impute_data(df):
+    methods = ["linear", "mean", "median", "zero"]
+    imputed_data = {}
+    stats_after = {}
+
+    for method in methods:
+        if method == "linear":
+            df_imputed = df.interpolate(method='linear', axis=0)
+        elif method == "mean":
+            df_imputed = df.fillna(df.mean())
+        elif method == "median":
+            df_imputed = df.fillna(df.median())
+        elif method == "zero":
+            df_imputed = df.fillna(0)
+        else:
+            continue
+
+        imputed_data[method] = df_imputed.to_dict(orient='list')
+        stats_after[method] = df_imputed.describe().to_dict()
+
+    return imputed_data, stats_after
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "No se subió ningún archivo"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No se envió ningún archivo."}), 400
+
+    file = request.files["file"]
 
     try:
-        # Leer CSV y convertir todo a numérico
+        # Leer CSV
         df = pd.read_csv(file)
+
+        if df.empty:
+            return jsonify({"error": "CSV vacío."}), 400
+
+        # Convertir cualquier dato no numérico en NaN
         df = df.apply(pd.to_numeric, errors='coerce')
+
+        # Columnas detectadas
+        columns = df.columns.tolist()
 
         # Estadísticas antes de imputación
         stats_before = df.describe().to_dict()
 
-        # Técnicas de imputación
-        techniques = {
-            "mean": df.fillna(df.mean()),
-            "zero": df.fillna(0),
-            "median": df.fillna(df.median()),
-            "linear": df.interpolate(method="linear", limit_direction='both')
-        }
+        # Imputación
+        imputed_data, stats_after = impute_data(df)
 
-        stats_after = {}
-        imputed_data = {}
-        errors = {}
-
-        for name, df_tech in techniques.items():
-            stats_after[name] = df_tech.describe().to_dict()
-            imputed_data[name] = df_tech.to_dict(orient="records")
-            # Error absoluto promedio
-            errors[name] = ((df_tech - df).abs()).mean().to_dict()
-
-        return jsonify({
-            "statistics_before": stats_before,
+        response = {
+            "columns": columns,
+            "stats_before": stats_before,
             "statistics_after": stats_after,
             "imputed_data": imputed_data,
-            "errors": errors
-        })
+            "methods": ["linear", "mean", "median", "zero"],
+            "message": "✅ API de imputación lista"
+        }
+
+        return jsonify(response), 200
 
     except Exception as e:
-        return jsonify({"error": f"No se pudo procesar el CSV: {str(e)}"}), 400
+        return jsonify({"error": f"No se pudo procesar el CSV: {e}"}), 400
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 8080))  # Cloud Run asigna PORT=8080
     app.run(host="0.0.0.0", port=port)
+
