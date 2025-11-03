@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 
-# Función para imputar datos
+# Función de imputación
 def impute_data(df):
     methods = ["linear", "mean", "median", "zero"]
     imputed_data = {}
@@ -35,23 +35,20 @@ def analyze():
 
     file = request.files["file"]
     try:
-        # Leer CSV directamente desde BytesIO
         file.seek(0)
+        # Leer CSV
         df = pd.read_csv(file)
-
         if df.empty:
             return jsonify({"error": "CSV vacío."}), 400
 
-        # Convertir cualquier dato no numérico en NaN
+        # Convertir datos no numéricos a NaN
         df = df.apply(pd.to_numeric, errors='coerce')
 
-        # Columnas detectadas
+        if df.empty or len(df.columns) == 0:
+            return jsonify({"error": "No se pudieron detectar columnas numéricas."}), 400
+
         columns = df.columns.tolist()
-
-        # Estadísticas antes de imputación
         stats_before = df.describe().to_dict()
-
-        # Imputación
         imputed_data, stats_after = impute_data(df)
 
         response = {
@@ -62,12 +59,11 @@ def analyze():
             "methods": ["linear", "mean", "median", "zero"],
             "message": "✅ API de imputación lista"
         }
-
         return jsonify(response), 200
 
     except Exception as e:
         return jsonify({"error": f"No se pudo procesar el CSV: {e}"}), 400
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Cloud Run asigna PORT=8080
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
