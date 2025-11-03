@@ -5,12 +5,6 @@ import os
 
 app = Flask(__name__)
 
-# Resto del código de tu API aquí...
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Cloud Run asigna PORT=8080
-    app.run(host="0.0.0.0", port=port)
-
 # Función para imputar datos
 def impute_data(df):
     methods = ["linear", "mean", "median", "zero"]
@@ -40,9 +34,9 @@ def analyze():
         return jsonify({"error": "No se envió ningún archivo."}), 400
 
     file = request.files["file"]
-
     try:
-        # Leer CSV
+        # Leer CSV directamente desde BytesIO
+        file.seek(0)
         df = pd.read_csv(file)
 
         if df.empty:
@@ -77,4 +71,3 @@ def analyze():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))  # Cloud Run asigna PORT=8080
     app.run(host="0.0.0.0", port=port)
-
