@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
-import os  # Solo para leer el puerto asignado por Cloud Run
+import os  # Para puerto dinámico en Cloud Run
 
 app = Flask(__name__)
 
@@ -12,9 +12,8 @@ def analyze():
         return jsonify({"error": "No se subió ningún archivo"}), 400
 
     try:
-        # Leer CSV
+        # Leer CSV y convertir a numérico (no numéricos -> NaN)
         df = pd.read_csv(file)
-        # Convertir valores no numéricos a NaN
         df = df.apply(pd.to_numeric, errors='coerce')
 
         # Estadísticas antes de imputación
@@ -29,15 +28,13 @@ def analyze():
         }
 
         stats_after = {}
-        errors = {}
         imputed_data = {}
+        errors = {}
 
         for name, df_tech in techniques.items():
             stats_after[name] = df_tech.describe().to_dict()
-            # Error: promedio absoluto de diferencia por columna
-            error = ((df_tech - df).abs()).mean().to_dict()
-            errors[name] = error
             imputed_data[name] = df_tech.to_dict(orient="records")
+            errors[name] = ((df_tech - df).abs()).mean().to_dict()
 
         return jsonify({
             "statistics_before": stats_before,
@@ -47,9 +44,8 @@ def analyze():
         })
 
     except Exception as e:
-        return jsonify({"error": f"No se pudo leer el archivo CSV. {str(e)}"}), 400
+        return jsonify({"error": f"No se pudo procesar el CSV: {str(e)}"}), 400
 
 if __name__ == "__main__":
-    # Cloud Run asigna el puerto dinámicamente mediante la variable de entorno PORT
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
