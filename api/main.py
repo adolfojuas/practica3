@@ -12,7 +12,7 @@ def analyze():
         return jsonify({"error": "No se subió ningún archivo"}), 400
 
     try:
-        # Leer CSV y convertir a numérico (no numéricos -> NaN)
+        # Leer CSV y convertir todo a numérico
         df = pd.read_csv(file)
         df = df.apply(pd.to_numeric, errors='coerce')
 
@@ -24,7 +24,7 @@ def analyze():
             "mean": df.fillna(df.mean()),
             "zero": df.fillna(0),
             "median": df.fillna(df.median()),
-            "linear": df.interpolate(method="linear")
+            "linear": df.interpolate(method="linear", limit_direction='both')
         }
 
         stats_after = {}
@@ -34,6 +34,7 @@ def analyze():
         for name, df_tech in techniques.items():
             stats_after[name] = df_tech.describe().to_dict()
             imputed_data[name] = df_tech.to_dict(orient="records")
+            # Error absoluto promedio
             errors[name] = ((df_tech - df).abs()).mean().to_dict()
 
         return jsonify({
