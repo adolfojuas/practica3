@@ -3,83 +3,62 @@ import pandas as pd
 import requests
 import matplotlib.pyplot as plt
 
+# URL de tu API en Cloud Run
 API_URL = "https://flask-api-267825576411.us-central1.run.app/analyze"
 
-st.title("App de Imputación de Datos Faltantes")
+st.title("📊 App de Imputación de Datos")
 
-uploaded_file = st.file_uploader("Sube un archivo CSV", type=["csv"])
-
+# Cargar archivo CSV
+uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
 if uploaded_file is not None:
     try:
-        # Leer CSV
         df = pd.read_csv(uploaded_file)
-        non_numeric_count = df.applymap(lambda x: not pd.api.types.is_number(x)).sum().sum()
-        df = df.apply(pd.to_numeric, errors='coerce')
-
         st.subheader("Vista previa del CSV")
-        st.dataframe(df.head())
-        st.info(f"Celdas no numéricas convertidas a NaN: {non_numeric_count}")
+        st.dataframe(df)
 
-        st.subheader("Estadísticas antes de imputación")
-        st.dataframe(df.describe())
+        # Enviar CSV a la API
+        response = requests.post(API_URL, files={"file": uploaded_file})
 
-        # Enviar archivo a la API
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-        response = requests.post(API_URL, files=files)
-
-        try:
+        if response.status_code == 200:
             data = response.json()
-        except Exception as e:
-            st.error(f"No se pudo decodificar la respuesta de la API: {e}")
-            st.write(response.text)
-            st.stop()
 
-        if "error" in data:
-            st.error(f"Error en la API: {data['error']}")
-        else:
-            st.success("✅ Respuesta recibida de la API")
+            # Estadísticas antes de imputación
+            st.subheader("📌 Estadísticas antes de imputación")
+            stats_before = data.get("stats_before", {})
+            for col, stats in stats_before.items():
+                st.write(f"Columna: {col}")
+                df_stats = pd.DataFrame(stats, index=[0]).T
+                st.table(df_stats)
 
             # Estadísticas después de imputación
-            st.subheader("Estadísticas después de imputación")
+            st.subheader("📌 Estadísticas después de imputación")
             stats_after = data.get("statistics_after", {})
-            if stats_after:
-                for method, stats in stats_after.items():
-                    st.markdown(f"**Técnica:** {method}")
-                    st.json(stats)
-            else:
-                st.info("No se recibieron estadísticas después de imputación.")
+            for method, stats in stats_after.items():
+                st.write(f"### Técnica: {method}")
+                df_stats = pd.DataFrame(stats).T
+                st.dataframe(df_stats)
 
             # Datos imputados
-            st.subheader("Datos imputados por técnica")
+            st.subheader("📌 Datos imputados por técnica")
             imputed_data = data.get("imputed_data", {})
-            if imputed_data:
-                for method, records in imputed_data.items():
-                    st.markdown(f"**Técnica:** {method}")
-                    if records:
-                        df_imputed = pd.DataFrame(records)
-                        st.dataframe(df_imputed.head())
-                    else:
-                        st.info("No hay datos imputados para esta técnica.")
-            else:
-                st.info("No se recibieron datos imputados.")
+            for method, df_dict in imputed_data.items():
+                st.write(f"### Técnica: {method}")
+                df_imputed = pd.DataFrame(df_dict)
+                st.dataframe(df_imputed)
 
-            # Comparación de errores
-            st.subheader("Comparación del error introducido por técnica")
-            errors = data.get("errors", {})
-            if errors:
-                errors_df = pd.DataFrame(errors)
-                st.dataframe(errors_df)
+                # Gráfica de cada técnica
+                fig, ax = plt.subplots()
+                for col in df_imputed.columns:
+                    ax.plot(df_imputed.index, df_imputed[col], marker='o', label=col)
+                ax.set_title(f"Curvas de imputación: {method}")
+                ax.set_xlabel("Fila")
+                ax.set_ylabel("Valor")
+                ax.legend()
+                plt.tight_layout()
+                st.pyplot(fig)
 
-                # Graficar solo si hay columnas numéricas
-                numeric_cols = errors_df.select_dtypes(include='number').columns
-                if not numeric_cols.empty:
-                    errors_df[numeric_cols].plot(kind='bar', figsize=(10,5))
-                    st.pyplot(plt.gcf())
-                    plt.clf()
-                else:
-                    st.info("No hay datos numéricos para graficar el error.")
-            else:
-                st.info("No se recibieron errores.")
+        else:
+            st.error(f"Error en la API: {response.status_code} - {response.text}")
 
     except Exception as e:
         st.error(f"Ocurrió un error procesando el archivo: {e}")
