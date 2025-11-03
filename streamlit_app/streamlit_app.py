@@ -3,77 +3,59 @@ import pandas as pd
 import requests
 import matplotlib.pyplot as plt
 
-# ------------------------------------------------------------
-# CONFIGURACIÓN
-# ------------------------------------------------------------
-# Cambia esta URL según donde esté desplegada tu API Flask
-import os
-API_URL = "https://flask-api-267825576411.us-central1.run.app"
+API_URL = "https://flask-api-267825576411.us-central1.run.app/analyze"
 
+st.title("App de Imputación de Datos Faltantes")
 
-st.set_page_config(page_title="Análisis de valores faltantes", layout="wide")
+uploaded_file = st.file_uploader("Sube un archivo CSV", type=["csv"])
 
-st.title("🔍 Análisis e imputación de valores faltantes")
-st.markdown("""
-Esta aplicación permite subir un archivo `.csv` con valores faltantes, 
-analizar su impacto y aplicar distintos métodos de imputación:
-- Interpolación lineal  
-- Relleno con la media  
-- Sustitución con cero  
-""")
-
-# ------------------------------------------------------------
-# SUBIR ARCHIVO
-# ------------------------------------------------------------
-uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
-
-if uploaded_file:
-    st.info("Procesando archivo...")
-
-    # Enviar archivo a la API Flask
-    files = {"file": uploaded_file.getvalue()}
+if uploaded_file is not None:
     try:
-        response = requests.post(API_URL, files={"file": uploaded_file})
-    except requests.exceptions.ConnectionError:
-        st.error("❌ No se pudo conectar con la API Flask. Verifica que esté corriendo.")
-        st.stop()
+        # Leer CSV
+        df = pd.read_csv(uploaded_file)
+        non_numeric_count = df.applymap(lambda x: not pd.api.types.is_number(x)).sum().sum()
+        df = df.apply(pd.to_numeric, errors='coerce')
 
-    if response.status_code != 200:
-        # Mostrar error desde la API
-        error_msg = response.json().get("error", "Error desconocido.")
-        st.error(f"⚠️ {error_msg}")
-    else:
-        data = response.json()
+        st.subheader("Vista previa del CSV")
+        st.dataframe(df.head())
+        st.info(f"Celdas no numéricas convertidas a NaN: {non_numeric_count}")
 
-        st.success(data["message"])
-        st.write("### 📋 Columnas detectadas:")
-        st.write(", ".join(data["columns"]))
+        st.subheader("Estadísticas antes de imputación")
+        st.dataframe(df.describe())
 
-        # Estadísticas antes
-        st.subheader("📊 Estadísticas antes de imputar")
-        df_before = pd.DataFrame(data["stats_before"]).T
-        st.dataframe(df_before)
+        # Enviar a API
+        files = {"file": uploaded_file}
+        response = requests.post(API_URL, files=files)
 
-        # Mostrar resultados por método
-        for method, result in data["methods"].items():
-            st.subheader(f"🧮 Método: {method.capitalize()}")
-            df_after = pd.DataFrame(result["stats_after"]).T
-            st.dataframe(df_after)
+        if response.status_code != 200:
+            st.error(f"Error en la API: {response.status_code}\nContenido:\n{response.text}")
+        else:
+            data = response.json()
+            st.success("✅ Respuesta recibida de la API")
 
-            # Gráfica comparativa (media y varianza)
-            col1, col2 = st.columns(2)
-            with col1:
-                fig, ax = plt.subplots()
-                ax.bar(df_before.index, df_before["mean"], label="Antes", alpha=0.7)
-                ax.bar(df_after.index, df_after["mean"], label="Después", alpha=0.7)
-                ax.set_title(f"Comparación de medias ({method})")
-                ax.legend()
-                st.pyplot(fig)
+            # Estadísticas después de imputación
+            st.subheader("Estadísticas después de imputación")
+            for method, stats in data["statistics_after"].items():
+                st.markdown(f"**Técnica:** {method}")
+                st.json(stats)
 
-            with col2:
-                fig, ax = plt.subplots()
-                ax.bar(df_before.index, df_before["var"], label="Antes", alpha=0.7)
-                ax.bar(df_after.index, df_after["var"], label="Después", alpha=0.7)
-                ax.set_title(f"Comparación de varianza ({method})")
-                ax.legend()
-                st.pyplot(fig)
+            # Mostrar datos imputados
+            st.subheader("Datos imputados por técnica")
+            for method, records in data["imputed_data"].items():
+                st.markdown(f"**Técnica:** {method}")
+                df_imputed = pd.DataFrame(records)
+                st.dataframe(df_imputed.head())
+
+            # Gráficos de error introducido
+            st.subheader("Comparación del error introducido por técnica")
+            errors_df = pd.DataFrame(data["errors"])
+            st.dataframe(errors_df)
+
+            # Graficar error por columna
+            st.markdown("### Gráfico de error absoluto promedio por columna")
+            errors_df.plot(kind='bar', figsize=(10,5))
+            st.pyplot(plt.gcf())
+            plt.clf()
+
+    except Exception as e:
+        st.error(f"Ocurrió un error procesando el archivo: {e}")
